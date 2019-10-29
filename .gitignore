@@ -1,0 +1,6 @@
+.idea/
+.mypy_cache/
+GPUQueue.egg-info/
+build/
+dist/
+**/*.pyc
