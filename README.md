@@ -43,5 +43,9 @@ This script can be used to automatically identify the GPU that has been released
 
 `gpuqueue` can be directly used in the bash interface, see `bash_demo.sh` for more details.
 
-
+---
+### install 
+```bash
+pip install gpuqueue
+```
 
