@@ -31,7 +31,7 @@ GPU num utilized 2
 GPU num utilized 2
 GPU num utilized 1
 all jobs has been run
-sucessful jobs: 4
+sucessful jobs: 6
 
 failed jobs: 0
 ```
