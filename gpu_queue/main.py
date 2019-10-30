@@ -1,7 +1,7 @@
 import argparse
 from queue import Queue, Empty
-from typing import List
 from subprocess import call
+from typing import List
 
 Job_Type = str
 Job_Array_Type = List[Job_Type]
@@ -68,7 +68,7 @@ class JobSubmitter:
         self.gpu_queue = Queue()
         for gpu in self.available_gpus:
             self.gpu_queue.put(gpu)
-        print("%d jobs has been saved" % len(self.job_array))
+        print("%d jobs has been loaded" % len(self.job_array))
         self.result_dict = {}
 
     def submit_jobs(self):
@@ -89,7 +89,7 @@ class JobSubmitter:
                 print(f"sucessful jobs: {len(s_dict)}")
                 if self.verbose:
                     self._print(s_dict)
-                print()
+
                 f_dict = {k: v for k, v in self.result_dict.items() if v != 0}
                 print(f"failed jobs: {len(f_dict)}")
                 if self.verbose:
@@ -102,6 +102,7 @@ class JobSubmitter:
         new_environment["CUDA_VISIBLE_DEVICES"] = str(gpu)
         result_code = call(job, shell=True, env=new_environment)
         self.result_dict[job] = result_code
+        # Recycling GPU num
         self.gpu_queue.put(gpu)
 
     def _print(self, result_dict):
@@ -115,3 +116,7 @@ def main():
     args = get_args()
     jobmanager = JobSubmitter(args.jobs, args.available_gpus, verbose=True)
     jobmanager.submit_jobs()
+
+
+if __name__ == "__main__":
+    main()
