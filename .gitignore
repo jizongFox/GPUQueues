@@ -4,3 +4,4 @@ GPUQueue.egg-info/
 build/
 dist/
 **/*.pyc
+log

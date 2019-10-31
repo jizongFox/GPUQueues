@@ -1,6 +1,7 @@
 import argparse
+import time
 from queue import Queue, Empty
-from subprocess import call
+from subprocess import run
 from typing import List
 
 Job_Type = str
@@ -11,6 +12,11 @@ import threading
 from threading import Thread
 from contextlib import contextmanager
 import re
+
+try:
+    from stdout_writer import log_writer
+except ModuleNotFoundError:
+    from .stdout_writer import log_writer
 
 
 @contextmanager
@@ -43,8 +49,9 @@ def threaded(_func=None, *, name="", daemon=False):
 def get_args():
     parser = argparse.ArgumentParser(description="Dynamic gpu job submitter")
     parser.add_argument("jobs", nargs="+", type=str)
-    parser.add_argument("--available_gpus", type=str, nargs="+", default=["0"], metavar=["0", "1"],
+    parser.add_argument("--available_gpus", type=str, nargs="+", default=["0"], metavar="N",
                         help="Available GPUs")
+    parser.add_argument("--save_dir", type=str, default="log", help="save_dir for log files")
     args = parser.parse_args()
     # print(f"input args:%s" % args)
     print(f"There are {len(args.jobs)} jobs")
@@ -56,13 +63,15 @@ def get_args():
 # you have one monitor to choose which variable to assign to the next job
 class JobSubmitter:
 
-    def __init__(self, job_array: Job_Array_Type, available_gpus: List[str] = ["0"], verbose=False) -> None:
+    def __init__(self, job_array: Job_Array_Type, available_gpus: List[str] = ["0"], save_dir="log",
+                 verbose=False) -> None:
         super().__init__()
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         self.job_array = job_array
         self.available_gpus = available_gpus
         self.job_queue = Queue()
         self.verbose = verbose
+        self.save_dir = save_dir
         for job in self.job_array:
             self.job_queue.put(job)
         self.gpu_queue = Queue()
@@ -75,9 +84,10 @@ class JobSubmitter:
         while True:
 
             try:
-                job = self.job_queue.get(timeout=0.1)  # if it is going te be empty, end the program
+                job = self.job_queue.get(timeout=1)  # if it is going te be empty, end the program
                 gpu = self.gpu_queue.get(timeout=None, block=True)  # this will wait forever
                 self._process_daemeon(job, gpu)
+                time.sleep(2)
 
             except TimeoutError:
                 pass
@@ -100,8 +110,9 @@ class JobSubmitter:
     def _process_daemeon(self, job, gpu):
         new_environment = os.environ.copy()
         new_environment["CUDA_VISIBLE_DEVICES"] = str(gpu)
-        result_code = call(job, shell=True, env=new_environment)
-        self.result_dict[job] = result_code
+        with log_writer(job, save_dir=self.save_dir) as writer:
+            result_code = run(job, shell=True, env=new_environment, stdout=writer)
+        self.result_dict[job] = result_code.returncode
         # Recycling GPU num
         self.gpu_queue.put(gpu)
 
@@ -114,7 +125,7 @@ class JobSubmitter:
 
 def main():
     args = get_args()
-    jobmanager = JobSubmitter(args.jobs, args.available_gpus, verbose=True)
+    jobmanager = JobSubmitter(args.jobs, args.available_gpus, verbose=False, save_dir=args.save_dir)
     jobmanager.submit_jobs()
 
 
