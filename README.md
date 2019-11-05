@@ -56,12 +56,19 @@ declare -a StringArray=(
 )
 # just using 0 and 1 gpus for those jobs
 gpuqueue "${StringArray[@]}" --available_gpus 0 1
+
+# you may want to run 2 jobs on each gpu to fully use the memory? simple
+gpuqueue "${StringArray[@]}" --available_gpus 0 1 0 1
+
 ```
+---
+### Log
+logs are stored in automatically generated `log` folder.
 
 
 ---
 ### install 
 ```bash
-pip install gpuqueue
+pip install -U gpuqueue
 ```
 
