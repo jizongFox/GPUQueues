@@ -64,7 +64,7 @@ def get_args():
 class JobSubmitter:
 
     def __init__(self, job_array: Job_Array_Type, available_gpus: List[str] = ["0"], save_dir="log",
-                 verbose=False) -> None:
+                 verbose=False, wait_second:int=3) -> None:
         super().__init__()
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         self.job_array = job_array
@@ -79,6 +79,7 @@ class JobSubmitter:
             self.gpu_queue.put(gpu)
         print("%d jobs has been loaded" % len(self.job_array))
         self.result_dict = {}
+        self.wait_second = wait_second
 
     def submit_jobs(self):
         while True:
@@ -87,7 +88,7 @@ class JobSubmitter:
                 job = self.job_queue.get(timeout=1)  # if it is going te be empty, end the program
                 gpu = self.gpu_queue.get(timeout=None, block=True)  # this will wait forever
                 self._process_daemeon(job, gpu)
-                time.sleep(2)
+                time.sleep(self.wait_second)
 
             except TimeoutError:
                 pass
