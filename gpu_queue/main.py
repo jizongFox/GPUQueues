@@ -1,22 +1,22 @@
 import argparse
+import os
+import re
+import threading
 import time
+from contextlib import contextmanager
+from functools import wraps
 from queue import Queue, Empty
 from subprocess import run
-from typing import List
-
-Job_Type = str
-Job_Array_Type = List[Job_Type]
-import os
-from functools import wraps
-import threading
 from threading import Thread
-from contextlib import contextmanager
-import re
+from typing import List
 
 try:
     from stdout_writer import log_writer
 except ModuleNotFoundError:
     from .stdout_writer import log_writer
+
+Job_Type = str
+Job_Array_Type = List[Job_Type]
 
 
 @contextmanager
@@ -49,9 +49,17 @@ def threaded(_func=None, *, name="", daemon=False):
 def get_args():
     parser = argparse.ArgumentParser(description="Dynamic gpu job submitter")
     parser.add_argument("jobs", nargs="+", type=str)
-    parser.add_argument("--available_gpus", type=str, nargs="+", default=["0"], metavar="N",
-                        help="Available GPUs")
-    parser.add_argument("--save_dir", type=str, default="log", help="save_dir for log files")
+    parser.add_argument(
+        "--available_gpus",
+        type=str,
+        nargs="+",
+        default=["0"],
+        metavar="N",
+        help="Available GPUs",
+    )
+    parser.add_argument(
+        "--save_dir", type=str, default="log", help="save_dir for log files"
+    )
     args = parser.parse_args()
     # print(f"input args:%s" % args)
     print(f"There are {len(args.jobs)} jobs")
@@ -62,9 +70,15 @@ def get_args():
 # you have one worker to launch job and get variables
 # you have one monitor to choose which variable to assign to the next job
 class JobSubmitter:
-
-    def __init__(self, job_array: Job_Array_Type, available_gpus: List[str] = ["0"], save_dir="log",
-                 verbose=False, wait_second:int=3) -> None:
+    def __init__(
+            self,
+            job_array: Job_Array_Type,
+            available_gpus: List[str] = ["0"],
+            save_dir="log",
+            verbose=False,
+            wait_second: int = 3,
+            first_time_wait_second: int = None,
+    ) -> None:
         super().__init__()
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         self.job_array = job_array
@@ -80,13 +94,26 @@ class JobSubmitter:
         print("%d jobs has been loaded" % len(self.job_array))
         self.result_dict = {}
         self.wait_second = wait_second
+        self.first_job_wait_second = first_time_wait_second or wait_second
 
     def submit_jobs(self):
+        job = self.job_queue.get(
+        )  # if it is going te be empty, end the program
+        gpu = self.gpu_queue.get(
+            timeout=None, block=True
+        )  # this will wait forever
+        self._process_daemeon(job, gpu)
+        time.sleep(self.first_job_wait_second)
+
         while True:
 
             try:
-                job = self.job_queue.get(timeout=1)  # if it is going te be empty, end the program
-                gpu = self.gpu_queue.get(timeout=None, block=True)  # this will wait forever
+                job = self.job_queue.get(
+                    timeout=1
+                )  # if it is going te be empty, end the program
+                gpu = self.gpu_queue.get(
+                    timeout=None, block=True
+                )  # this will wait forever
                 self._process_daemeon(job, gpu)
                 time.sleep(self.wait_second)
 
@@ -119,14 +146,16 @@ class JobSubmitter:
 
     def _print(self, result_dict):
         for k, v in result_dict.items():
-            k = ' '.join(re.split(' +|\n+', k)).strip()
+            k = " ".join(re.split(" +|\n+", k)).strip()
             print(f"Job:\n{k}")
             print("result_code", v)
 
 
 def main():
     args = get_args()
-    jobmanager = JobSubmitter(args.jobs, args.available_gpus, verbose=False, save_dir=args.save_dir)
+    jobmanager = JobSubmitter(
+        args.jobs, args.available_gpus, verbose=False, save_dir=args.save_dir
+    )
     jobmanager.submit_jobs()
 
 
