@@ -39,13 +39,13 @@ def get_args():
 # you have one monitor to choose which variable to assign to the next job
 class JobSubmitter:
     def __init__(
-            self,
-            job_array: str | t.Sequence[str],
-            available_gpus: str | int | t.List[str | int],
-            save_dir="log",
-            verbose=False,
-            wait_second: int = 3,
-            first_time_wait_second: int = None,
+        self,
+        job_array: str | t.Sequence[str],
+        available_gpus: str | int | t.List[str | int],
+        save_dir="log",
+        verbose=False,
+        wait_second: int = 3,
+        first_time_wait_second: int = None,
     ) -> None:
         super().__init__()
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
