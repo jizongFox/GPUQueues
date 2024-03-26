@@ -1,49 +1,17 @@
 import argparse
 import os
 import re
-import threading
 import time
-from contextlib import contextmanager
-from functools import wraps
+import typing as t
 from queue import Queue, Empty
 from subprocess import run
-from threading import Thread
-from typing import List
+
+from gpu_queue.utils import wait_thread, threaded
 
 try:
     from stdout_writer import log_writer
 except ModuleNotFoundError:
     from .stdout_writer import log_writer
-
-Job_Type = str
-Job_Array_Type = List[Job_Type]
-
-
-@contextmanager
-def wait_thread_ends(thread_name="submitter"):
-    yield
-    for t in threading.enumerate():
-        if t.name == thread_name:
-            t.join()
-
-
-def threaded(_func=None, *, name="", daemon=False):
-    """Decorator to run the process in an extra thread."""
-
-    def decorator_thread(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            new_thread = Thread(target=f, args=args, kwargs=kwargs, name=name)
-            new_thread.daemon = daemon
-            new_thread.start()
-            return new_thread
-
-        return wrapper
-
-    if _func is None:
-        return decorator_thread
-    else:
-        return decorator_thread(_func)
 
 
 def get_args():
@@ -71,40 +39,43 @@ def get_args():
 # you have one monitor to choose which variable to assign to the next job
 class JobSubmitter:
     def __init__(
-            self,
-            job_array: Job_Array_Type,
-            available_gpus: List[str] = ["0"],
-            save_dir="log",
-            verbose=False,
-            wait_second: int = 3,
-            first_time_wait_second: int = None,
+        self,
+        job_array: str | t.Sequence[str],
+        available_gpus: str | int | t.List[str | int],
+        save_dir="log",
+        verbose=False,
+        wait_second: int = 3,
+        first_time_wait_second: int = None,
     ) -> None:
         super().__init__()
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        if isinstance(job_array, str):
+            job_array = [job_array]
+        if isinstance(available_gpus, (str, int)):
+            available_gpus = [available_gpus]
+
         self.job_array = job_array
         self.available_gpus = available_gpus
+
         self.job_queue = Queue()
         self.verbose = verbose
         self.save_dir = save_dir
+
         for job in self.job_array:
             self.job_queue.put(job)
+
         self.gpu_queue = Queue()
+
         for gpu in self.available_gpus:
             self.gpu_queue.put(gpu)
+
         print("%d jobs has been loaded" % len(self.job_array))
         self.result_dict = {}
         self.wait_second = wait_second
         self.first_job_wait_second = first_time_wait_second or wait_second
 
     def submit_jobs(self):
-        job = self.job_queue.get(
-        )  # if it is going te be empty, end the program
-        gpu = self.gpu_queue.get(
-            timeout=None, block=True
-        )  # this will wait forever
-        self._process_daemeon(job, gpu)
-        time.sleep(self.first_job_wait_second)
-
+        cur_job = 0
         while True:
 
             try:
@@ -114,32 +85,37 @@ class JobSubmitter:
                 gpu = self.gpu_queue.get(
                     timeout=None, block=True
                 )  # this will wait forever
-                self._process_daemeon(job, gpu)
-                time.sleep(self.wait_second)
+                self._process_daemon(job, gpu)
+                time.sleep(
+                    self.wait_second if cur_job > 0 else self.first_job_wait_second
+                )
+                cur_job += 1
 
-            except TimeoutError:
-                pass
             except Empty:  # the jobs are done
-                with wait_thread_ends(thread_name="submitter"):
-                    pass
-                print("all jobs has been run")
-                s_dict = {k: v for k, v in self.result_dict.items() if v == 0}
-                print(f"sucessful jobs: {len(s_dict)}")
-                if self.verbose:
-                    self._print(s_dict)
-
-                f_dict = {k: v for k, v in self.result_dict.items() if v != 0}
-                print(f"failed jobs: {len(f_dict)}")
-                if self.verbose:
-                    self._print(f_dict)
                 break
 
+        wait_thread(thread_name="submitter")
+        print("all jobs has been run")
+        s_dict = {k: v for k, v in self.result_dict.items() if v == 0}
+        print(f"sucessful jobs: {len(s_dict)}")
+        if self.verbose:
+            self._print(s_dict)
+
+        f_dict = {k: v for k, v in self.result_dict.items() if v != 0}
+        print(f"failed jobs: {len(f_dict)}")
+        if self.verbose:
+            self._print(f_dict)
+
     @threaded(daemon=False, name="submitter")
-    def _process_daemeon(self, job, gpu):
+    def _process_daemon(self, job, gpu):
         new_environment = os.environ.copy()
         new_environment["CUDA_VISIBLE_DEVICES"] = str(gpu)
-        with log_writer(job, save_dir=self.save_dir) as writer:
-            result_code = run(job, shell=True, env=new_environment, stdout=writer)
+        # with log_writer(job, save_dir=self.save_dir) as writer:
+        result_code = run(
+            job,
+            shell=True,
+            env=new_environment,
+        )
         self.result_dict[job] = result_code.returncode
         # Recycling GPU num
         self.gpu_queue.put(gpu)
