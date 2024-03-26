@@ -64,10 +64,11 @@ class JobSubmitter:
         for job in self.job_array:
             self.job_queue.put(job)
 
+        self.gpu_queue_id = 0
         self.gpu_queue = Queue()
 
         for gpu in self.available_gpus:
-            self.gpu_queue.put(gpu)
+            self.gpu_queue.put((gpu, self.gpu_queue_id))
 
         print("%d jobs has been loaded" % len(self.job_array))
         self.result_dict = {}
@@ -106,8 +107,18 @@ class JobSubmitter:
         if self.verbose:
             self._print(f_dict)
 
+    def update_available_gpus(self, available_gpus: str | int | t.List[str | int]):
+        self.gpu_queue_id += 1
+        gpu_queue = Queue()
+        for gpu in available_gpus:
+            gpu_queue.put((gpu, self.gpu_queue_id))
+        self.available_gpus = available_gpus
+        self.gpu_queue = gpu_queue
+
+
     @threaded(daemon=False, name="submitter")
     def _process_daemon(self, job, gpu):
+        gpu, gpu_queue_id = gpu
         new_environment = os.environ.copy()
         new_environment["CUDA_VISIBLE_DEVICES"] = str(gpu)
         # with log_writer(job, save_dir=self.save_dir) as writer:
@@ -118,7 +129,8 @@ class JobSubmitter:
         )
         self.result_dict[job] = result_code.returncode
         # Recycling GPU num
-        self.gpu_queue.put(gpu)
+        if gpu_queue_id == self.gpu_queue_id:
+            self.gpu_queue.put(gpu)
 
     def _print(self, result_dict):
         for k, v in result_dict.items():
