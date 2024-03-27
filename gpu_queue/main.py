@@ -147,7 +147,8 @@ class JobSubmitter:
         if gpu_queue_id == self.gpu_queue_id:
             self.gpu_queue.put((gpu, self.gpu_queue_id))
 
-    def _print(self, result_dict):
+    @staticmethod
+    def _print(result_dict):
         for k, v in result_dict.items():
             k = " ".join(re.split(" +|\n+", k)).strip()
             print(f"Job:\n{k}")
