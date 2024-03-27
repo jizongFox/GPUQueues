@@ -5,6 +5,9 @@ import time
 import typing as t
 from queue import Queue, Empty
 from subprocess import run
+from threading import Lock
+
+from loguru import logger
 
 from gpu_queue.utils import wait_thread, threaded
 
@@ -12,6 +15,8 @@ try:
     from stdout_writer import log_writer
 except ModuleNotFoundError:
     from .stdout_writer import log_writer
+
+locker = Lock()
 
 
 def get_args():
@@ -58,6 +63,7 @@ class JobSubmitter:
         self.available_gpus = available_gpus
 
         self.job_queue = Queue()
+        breakpoint()
         self.verbose = verbose
         self.save_dir = save_dir
 
@@ -68,7 +74,7 @@ class JobSubmitter:
         self.gpu_queue = Queue()
 
         for gpu in self.available_gpus:
-            self.gpu_queue.put((gpu, self.gpu_queue_id))
+            self.gpu_queue.put([gpu, self.gpu_queue_id])
 
         print("%d jobs has been loaded" % len(self.job_array))
         self.result_dict = {}
@@ -83,9 +89,10 @@ class JobSubmitter:
                 job = self.job_queue.get(
                     timeout=1
                 )  # if it is going te be empty, end the program
-                gpu = self.gpu_queue.get(
-                    timeout=None, block=True
-                )  # this will wait forever
+                with locker:
+                    gpu = self.gpu_queue.get(
+                        timeout=None, block=True
+                    )  # this will wait forever
                 self._process_daemon(job, gpu)
                 time.sleep(
                     self.wait_second if cur_job > 0 else self.first_job_wait_second
@@ -94,7 +101,7 @@ class JobSubmitter:
 
             except Empty:  # the jobs are done
                 break
-
+        logger.info("All jobs has been submitted")
         wait_thread(thread_name="submitter")
         print("all jobs has been run")
         s_dict = {k: v for k, v in self.result_dict.items() if v == 0}
@@ -108,16 +115,25 @@ class JobSubmitter:
             self._print(f_dict)
 
     def update_available_gpus(self, available_gpus: str | int | t.List[str | int]):
-        self.gpu_queue_id += 1
-        gpu_queue = Queue()
-        for gpu in available_gpus:
-            gpu_queue.put((gpu, self.gpu_queue_id))
-        self.available_gpus = available_gpus
-        self.gpu_queue = gpu_queue
+        with locker:
+            logger.info(f"Updating available GPUs to {available_gpus}")
+            self.gpu_queue_id += 1
+            self._wait_until_gpu_consumed()
+            logger.debug("creating new queue")
+            gpu_queue = Queue()
+            for gpu in available_gpus:
+                gpu_queue.put((gpu, self.gpu_queue_id))
+            self.available_gpus = available_gpus
+            self.gpu_queue = gpu_queue
+
+    def _wait_until_gpu_consumed(self):
+        while not self.gpu_queue.empty():
+            logger.debug(self.gpu_queue.qsize())
+            time.sleep(0.1)
 
     @threaded(daemon=False, name="submitter")
     def _process_daemon(self, job, gpu):
-        gpu, gpu_queue_id = gpu
+        (gpu, gpu_queue_id) = gpu
         new_environment = os.environ.copy()
         new_environment["CUDA_VISIBLE_DEVICES"] = str(gpu)
         # with log_writer(job, save_dir=self.save_dir) as writer:
@@ -129,7 +145,7 @@ class JobSubmitter:
         self.result_dict[job] = result_code.returncode
         # Recycling GPU num
         if gpu_queue_id == self.gpu_queue_id:
-            self.gpu_queue.put(gpu)
+            self.gpu_queue.put((gpu, self.gpu_queue_id))
 
     def _print(self, result_dict):
         for k, v in result_dict.items():
