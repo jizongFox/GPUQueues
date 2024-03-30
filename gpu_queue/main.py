@@ -93,7 +93,6 @@ class JobSubmitter(metaclass=_SingletonMeta):
                     timeout=1
                 )  # if it is going te be empty, end the program
                 with locker:
-                    logger.debug(f"job_queue size: {self.job_queue.qsize()}")
                     gpu = self.gpu_queue.get(
                         timeout=None, block=True
                     )  # this will wait forever
@@ -139,7 +138,7 @@ class JobSubmitter(metaclass=_SingletonMeta):
             logger.info(f"Updating available GPUs to {available_gpus}")
             self.gpu_queue_id += 1
             self._wait_until_gpu_consumed()
-            logger.debug("creating new queue")
+            # logger.debug("creating new queue")
             gpu_queue = Queue()
             for gpu in available_gpus:
                 gpu_queue.put((gpu, self.gpu_queue_id))
@@ -166,7 +165,7 @@ class JobSubmitter(metaclass=_SingletonMeta):
         self.result_dict[job] = result_code.returncode
         # Recycling GPU num
         if gpu_queue_id == self.gpu_queue_id:
-            logger.debug(f"Recycling GPU {gpu}")
+            # logger.debug(f"Recycling GPU {gpu}")
             self.gpu_queue.put((gpu, self.gpu_queue_id))
 
     @staticmethod

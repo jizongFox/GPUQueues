@@ -1,6 +1,12 @@
+import typing
+
 from fastapi import FastAPI
 
+if typing.TYPE_CHECKING:
+    from gpu_queue.main import JobSubmitter
+
 app = FastAPI()
+app.submitter: "JobSubmitter"
 
 
 @app.get("/")

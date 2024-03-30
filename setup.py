@@ -6,7 +6,7 @@ with open(path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 setup(
     name="GPUQueue",
-    version="1.0.0",
+    version="2.0.0",
     packages=["gpu_queue"],
     url="https://github.com/jizongFox/GPUQueues",
     license="MIT",
@@ -14,7 +14,13 @@ setup(
     author_email="jizong.peng.1@etsmtl.net",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    install_requires=[],
+    install_requires=[
+        "uvicorn",
+        "loguru",
+        "fastapi",
+        "pydantic",
+        "typing-extensions",
+    ],
     classifiers=[
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
