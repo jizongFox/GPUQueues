@@ -7,14 +7,16 @@ from queue import Queue, Empty
 from subprocess import run
 from threading import Lock
 
+import uvicorn
 from loguru import logger
 
-from gpu_queue.utils import wait_thread, threaded
+from gpu_queue.utils import wait_thread, threaded, _SingletonMeta
 
 try:
     from stdout_writer import log_writer
 except ModuleNotFoundError:
     from .stdout_writer import log_writer
+from gpu_queue.web import app
 
 locker = Lock()
 
@@ -42,7 +44,7 @@ def get_args():
 # here using python os.environment to set global variables.
 # you have one worker to launch job and get variables
 # you have one monitor to choose which variable to assign to the next job
-class JobSubmitter:
+class JobSubmitter(metaclass=_SingletonMeta):
     def __init__(
         self,
         job_array: str | t.Sequence[str],
@@ -52,8 +54,8 @@ class JobSubmitter:
         wait_second: int = 3,
         first_time_wait_second: int = None,
     ) -> None:
-        super().__init__()
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+
         if isinstance(job_array, str):
             job_array = [job_array]
         if isinstance(available_gpus, (str, int)):
@@ -63,7 +65,6 @@ class JobSubmitter:
         self.available_gpus = available_gpus
 
         self.job_queue = Queue()
-        breakpoint()
         self.verbose = verbose
         self.save_dir = save_dir
 
@@ -81,31 +82,35 @@ class JobSubmitter:
         self.wait_second = wait_second
         self.first_job_wait_second = first_time_wait_second or wait_second
 
-    def submit_jobs(self):
-        cur_job = 0
-        while True:
+        self.cur_job = 0
+        app.submitter = self
 
+    @threaded(daemon=False, name="submitter")
+    def submit_jobs(self):
+
+        while True:
             try:
                 job = self.job_queue.get(
                     timeout=1
                 )  # if it is going te be empty, end the program
                 with locker:
+                    logger.debug(f"job_queue size: {self.job_queue.qsize()}")
                     gpu = self.gpu_queue.get(
                         timeout=None, block=True
                     )  # this will wait forever
                 self._process_daemon(job, gpu)
                 time.sleep(
-                    self.wait_second if cur_job > 0 else self.first_job_wait_second
+                    self.wait_second if self.cur_job > 0 else self.first_job_wait_second
                 )
-                cur_job += 1
+                self.cur_job += 1
 
             except Empty:  # the jobs are done
                 break
         logger.info("All jobs has been submitted")
-        wait_thread(thread_name="submitter")
+        wait_thread(thread_name="process_daemon")
         print("all jobs has been run")
         s_dict = {k: v for k, v in self.result_dict.items() if v == 0}
-        print(f"sucessful jobs: {len(s_dict)}")
+        print(f"successful jobs: {len(s_dict)}")
         if self.verbose:
             self._print(s_dict)
 
@@ -128,12 +133,13 @@ class JobSubmitter:
 
     def _wait_until_gpu_consumed(self):
         while not self.gpu_queue.empty():
-            logger.debug(self.gpu_queue.qsize())
             time.sleep(0.1)
+            with locker:
+                time.sleep(0.1)
 
-    @threaded(daemon=False, name="submitter")
-    def _process_daemon(self, job, gpu):
-        (gpu, gpu_queue_id) = gpu
+    @threaded(daemon=False, name="process_daemon")
+    def _process_daemon(self, job, gpu_message):
+        (gpu, gpu_queue_id) = gpu_message
         new_environment = os.environ.copy()
         new_environment["CUDA_VISIBLE_DEVICES"] = str(gpu)
         # with log_writer(job, save_dir=self.save_dir) as writer:
@@ -145,6 +151,7 @@ class JobSubmitter:
         self.result_dict[job] = result_code.returncode
         # Recycling GPU num
         if gpu_queue_id == self.gpu_queue_id:
+            logger.debug(f"Recycling GPU {gpu}")
             self.gpu_queue.put((gpu, self.gpu_queue_id))
 
     @staticmethod
@@ -155,13 +162,5 @@ class JobSubmitter:
             print("result_code", v)
 
 
-def main():
-    args = get_args()
-    jobmanager = JobSubmitter(
-        args.jobs, args.available_gpus, verbose=False, save_dir=args.save_dir
-    )
-    jobmanager.submit_jobs()
-
-
-if __name__ == "__main__":
-    main()
+def launch_server(port: int = 8080):
+    uvicorn.run(app, host="0.0.0.0", port=int(port))
