@@ -5,7 +5,7 @@ import time
 import typing as t
 from queue import Queue, Empty
 from subprocess import run
-from threading import Lock
+from threading import Lock, Thread
 
 import uvicorn
 from loguru import logger
@@ -85,8 +85,7 @@ class JobSubmitter(metaclass=_SingletonMeta):
         self.cur_job = 0
         app.submitter = self
 
-    @threaded(daemon=False, name="submitter")
-    def submit_jobs(self):
+    def __submit_jobs(self):
 
         while True:
             try:
@@ -118,6 +117,22 @@ class JobSubmitter(metaclass=_SingletonMeta):
         print(f"failed jobs: {len(f_dict)}")
         if self.verbose:
             self._print(f_dict)
+
+    @t.overload
+    def submit(self, block: bool = True) -> None:
+        ...
+
+    @t.overload
+    def submit(self, block: bool = False) -> Thread:
+        ...
+
+    def submit(self, block: bool = True) -> None | Thread:
+        if block:
+            return self.__submit_jobs()
+        logger.warning(
+            "submitting jobs in a thread, please call .join() at the end of the script"
+        )
+        return threaded(self.__submit_jobs, daemon=False)()
 
     def update_available_gpus(self, available_gpus: str | int | t.List[str | int]):
         with locker:

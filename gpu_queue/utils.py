@@ -1,5 +1,4 @@
 import threading
-import time
 from functools import wraps
 from threading import Thread
 
@@ -36,8 +35,9 @@ def threaded(_func=None, *, name: str = None, daemon=False):
     def decorator_thread(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            new_thread = Thread(target=f, args=args, kwargs=kwargs, name=name)
-            new_thread.daemon = daemon
+            new_thread = Thread(
+                target=f, args=args, kwargs=kwargs, name=name, daemon=daemon
+            )
             new_thread.start()
             return new_thread
 
