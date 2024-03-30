@@ -133,6 +133,9 @@ class JobSubmitter(metaclass=_SingletonMeta):
         )
         return threaded(self.__submit_jobs, daemon=False)()
 
+    def submit_jobs(self):
+        return self.submit(block=True)
+
     def update_available_gpus(self, available_gpus: str | int | t.List[str | int]):
         with locker:
             logger.info(f"Updating available GPUs to {available_gpus}")
