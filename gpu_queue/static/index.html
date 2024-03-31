@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GPU Queue</title>
+
+        <style>
+            #progress {
+                height: 200px;
+                overflow-y: scroll;
+            }
+        </style>
+    </head>
+    <body>
+<!--        <h1>Progress</h1>-->
+<!--        <div id="progress"></div>-->
+
+        <h1>Update GPUs</h1>
+        <form id="gpu-form">
+            <label for="gpu-list">Enter GPU IDs (comma separated):</label><br>
+            <textarea id="gpu-list" name="gpu-list" rows="1" cols="30"></textarea><br><br>
+            <button type="button" onclick="updateGPUs()">Update</button>
+        </form>
+
+        <script>
+            const updateGPUs = async () => {
+                const form = document.getElementById("gpu-form");
+                const gpuList = form.elements["gpu-list"].value;
+
+                const response = await fetch("/update_gpus", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ "gpus": gpuList.split(",") }),
+                });
+
+                form.reset();
+
+                if (!response.ok) {
+                    console.error("Error submitting form:", response.statusText);
+                    return false;
+                }
+
+                return true;
+            };
+
+            // const handleMessage = (message) => {
+            //     handleProgress(message);
+            // };
+
+            // const handleProgress = (message) => {
+            //     if (!("progress" in message)) return;
+            //     const { progress } = message;
+            //     const progressDiv = document.getElementById("progress");
+            //     const newLine = document.createElement("p");
+            //     newLine.textContent = progress;
+            //     progressDiv.appendChild(newLine);
+            //     progressDiv.scrollTop = progressDiv.scrollHeight;
+            // };
+            //
+            // const host = location.host;
+            // const port = Number(host.split(":")[1])
+            // const ws = new WebSocket(`ws://localhost:${port}/ws`);
+            //
+            // ws.onmessage = (event) => {
+            //     try {
+            //         const message = JSON.parse(event.data);
+            //         handleMessage(message);
+            //         console.log(message);
+            //     } catch (error) {
+            //         console.error(error);
+            //     }
+            // };
+        </script>
+    </body>
+</html>

@@ -1,39 +1,63 @@
-import typing
-
-from fastapi import FastAPI
-
-if typing.TYPE_CHECKING:
-    from gpu_queue.main import JobSubmitter
-
-app = FastAPI()
-app.submitter: "JobSubmitter"
+import typing as t
+import uvicorn
+from pathlib import Path
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 
-@app.get("/")
-async def root():
-    return f"{app.submitter.cur_job}/{len(app.submitter.job_array)}"
+class GPUList(BaseModel):
+    gpus: t.List[str | int]
 
 
-@app.get("/liveness/", status_code=200)
-def liveness_check():
-    return "Liveness check succeeded."
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: t.List[WebSocket] = []
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active_connections.append(ws)
+
+    def disconnect(self, ws: WebSocket):
+        self.active_connections.remove(ws)
+
+    async def send(self, message: dict):
+        for connection in self.active_connections:
+            await connection.send_json(message)
 
 
-@app.get("/readiness/", status_code=200)
-def readiness_check():
-    return "Readiness check succeeded."
+class App:
+    def __init__(
+            self,
+            job_submitter: "JobSubmitter",
+    ):
+        self.app = FastAPI()
+        self.connection_manager = ConnectionManager()
+        self.job_submitter = job_submitter
 
+        self.register_routes()
 
-@app.get("/startup/", status_code=200)
-def startup_check():
-    return "Startup check succeeded."
+    def register_routes(self):
+        @self.app.post("/update_gpus")
+        async def update_gpus(req: GPUList):
+            self.job_submitter.update_available_gpus(req.gpus)
 
+        @self.app.websocket("/ws")
+        async def websocket(ws: WebSocket):
+            await self.connection_manager.connect(ws)
 
-@app.get("/update_gpu/{gpus}")
-async def update_gpu(gpus):
-    if any([x for x in gpus if not x.isdigit()]):
-        return "Invalid GPU number"
+            try:
+                while True:
+                    _ = await websocket.receive_text()
+            except WebSocketDisconnect:
+                self.connection_manager.disconnect(ws)
 
-    app.submitter.update_available_gpus(list(gpus))
+        self.app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
 
-    return f"okay, updated to {gpus}"
+    async def update_progress(self, job, gpu):
+        await self.connection_manager.send({
+            "progress": job,
+        })
+
+    def launch_server(self, port: int):
+        uvicorn.run(self.app, host="0.0.0.0", port=port)

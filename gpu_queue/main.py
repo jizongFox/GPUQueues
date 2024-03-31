@@ -6,17 +6,14 @@ import typing as t
 from queue import Queue, Empty
 from subprocess import run
 from threading import Lock, Thread
-
-import uvicorn
 from loguru import logger
-
 from gpu_queue.utils import wait_thread, threaded, _SingletonMeta
 
 try:
     from stdout_writer import log_writer
 except ModuleNotFoundError:
     from .stdout_writer import log_writer
-from gpu_queue.web import app
+from gpu_queue.web import App
 
 locker = Lock()
 
@@ -83,7 +80,7 @@ class JobSubmitter(metaclass=_SingletonMeta):
         self.first_job_wait_second = first_time_wait_second or wait_second
 
         self.cur_job = 0
-        app.submitter = self
+        self.app = App(self)
 
     def __submit_jobs(self):
 
@@ -177,7 +174,3 @@ class JobSubmitter(metaclass=_SingletonMeta):
             k = " ".join(re.split(" +|\n+", k)).strip()
             print(f"Job:\n{k}")
             print("result_code", v)
-
-
-def launch_server(port: int = 8080):
-    uvicorn.run(app, host="0.0.0.0", port=int(port))

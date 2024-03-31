@@ -18,6 +18,7 @@ setup(
         "uvicorn",
         "loguru",
         "fastapi",
+        "websockets",
         "pydantic",
         "typing-extensions",
     ],
